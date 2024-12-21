@@ -29,6 +29,9 @@ class TestStep3(unittest.TestCase):
     def test_step_3__no_break_after_end_time(self):
         pass
 
+    def test_step_3__all_eligible_breaks_included(self):
+        pass
+
 
 
 if __name__ == '__main__':
