@@ -1,6 +1,6 @@
 from pandas import DataFrame
 
-class ReportsExplorer:
+class ReportsExporter:
     def __init__(self):
         pass
 
