@@ -5,15 +5,18 @@ class ReportsExporter:
         pass
 
     # Step 1
-    def generate_duty_start_end_times_report(self, raw_data: dict) -> DataFrame:
+    @staticmethod
+    def generate_duty_start_end_times_report(raw_data: dict) -> DataFrame:
         pass
 
     # Step 2
-    def generate_duty_start_end_times_and_stops_report(self, raw_data: dict) -> DataFrame:
+    @staticmethod
+    def generate_duty_start_end_times_and_stops_report(raw_data: dict) -> DataFrame:
         pass
 
     # Step 3
-    def generate_duty_breaks_report(self, raw_data: dict) -> DataFrame:
+    @staticmethod
+    def generate_duty_breaks_report(raw_data: dict) -> DataFrame:
         pass
 
 def main():
