@@ -8,9 +8,6 @@ class TestStep3(unittest.TestCase):
         # Note: The requirements enforce that listed breaks can't last less than 15 minutes
         pass
 
-    def test_step_3__duty_ids_are_unique(self):
-        pass
-
     def test_step_3__all_duty_ids_included(self):
         pass
 
