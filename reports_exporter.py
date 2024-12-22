@@ -1,5 +1,5 @@
 from bisect import bisect_left
-from importlib.metadata import unique_everseen
+from more_itertools import unique_everseen
 from typing import Optional
 
 from pandas import DataFrame
