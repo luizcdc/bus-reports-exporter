@@ -1,6 +1,7 @@
 import copy
 from bisect import bisect_left
 from datetime import datetime
+from json import load
 
 from more_itertools import unique_everseen
 from typing import Optional
@@ -75,6 +76,15 @@ class ReportsExporter:
     def generate_duty_start_end_times_and_stops_report(
         cls, raw_data: dict
     ) -> DataFrame:
+        """Generates a report with start/end times and initial/final stop descriptions of each duty
+
+        Args:
+            raw_data: The raw database (dict) containing all the objects
+
+        Returns:
+            A pandas DataFrame containing the columns "Duty Id", "Start Time", "End Time",
+            "Start stop description", and "End stop description".
+        """
         report = cls.generate_duty_start_end_times_report(raw_data)
         report["Start stop description"] = ""
         report["End stop description"] = ""
@@ -97,6 +107,17 @@ class ReportsExporter:
     # Step 3
     @classmethod
     def generate_duty_breaks_report(cls, raw_data: dict) -> DataFrame:
+        """
+        Generates a report with all the breaks of each duty which are at least 16 minutes long.
+
+        Args:
+            raw_data: The raw database (dict) containing all the objects.
+
+        Returns:
+            A pandas DataFrame containing the columns "Duty Id", "Start Time", "End Time",
+            "Start stop description", "End stop description", "Break start time",
+            "Break duration", and "Break stop name".
+        """
         unique_duty_ids_report = cls.generate_duty_start_end_times_and_stops_report(
             raw_data
         )
@@ -109,6 +130,7 @@ class ReportsExporter:
                 "Break stop name",
             ]
         )
+
         for i, duty_id in unique_duty_ids_report["Duty Id"].items():
             try:
                 breaks = cls._calculate_breaks(raw_data, duty_id, min_duration_mins=16)
@@ -127,7 +149,9 @@ class ReportsExporter:
                 new_row["Break duration"] = break_[1]
                 new_row["Break stop name"] = break_[2]
                 new_rows.append(new_row)
-            final_report = concat([final_report, DataFrame(new_rows)], ignore_index=True)
+            final_report = concat(
+                [final_report, DataFrame(new_rows)], ignore_index=True
+            )
         return final_report
 
     @classmethod
@@ -138,7 +162,10 @@ class ReportsExporter:
         min_duration_mins: int,
         explicit_break_event_types: tuple[str] = tuple(),
     ) -> list[tuple]:
-        def _transform_raw_breaks(raw_breaks, min_duration_mins=min_duration_mins):
+        def _transform_raw_breaks(
+            raw_breaks: list[tuple], min_duration_mins: int = min_duration_mins
+        ) -> list[tuple]:
+            """Transforms raw breaks into the desired final format taken by the report"""
             return [
                 (
                     cls._day_offset_time_to_simple_time(break_[0]),
@@ -192,6 +219,36 @@ class ReportsExporter:
     def _populate_duty_events_with_details(
         cls, raw_data: dict, duty_id: str, explicit_break_event_types: tuple[str]
     ) -> list[dict]:
+        """
+        Populates duty events with location, time and is_break_type attributes.
+
+        >>> raw_data = {
+        ...     "duties": [
+        ...         {
+        ...             "duty_id": "1",
+        ...             "duty_events": [
+        ...                 {"duty_event_type": "sign_on", "start_time": "0.08:00", "end_time": "0.08:30"},
+        ...                 {"duty_event_type": "vehicle_event", "vehicle_id": "1", "vehicle_event_sequence": 0}
+        ...             ]
+        ...         }
+        ...     ],
+        ...     "vehicles": [
+        ...         {
+        ...             "vehicle_id": "1",
+        ...             "vehicle_events": [
+        ...                 {"vehicle_event_sequence": "0", "vehicle_event_type": "attendance", "start_time": "0.08:30", "end_time": "0.09:00", "origin_stop_id": "stop_1", "destination_stop_id": "stop_2"}
+        ...             ]
+        ...         }
+        ...     ],
+        ...     "trips": [],
+        ...     "stops": []
+        ... }
+        >>> result = ReportsExporter._populate_duty_events_with_details(raw_data, "1", ("sign_on",))
+        >>> result[0]["is_break_type"]
+        True
+        >>> result[1]["start_time"]
+        '0.08:30'
+        """
         duty_events = copy.deepcopy(
             cls._get_object_by_id(raw_data["duties"], "duty_id", duty_id)["duty_events"]
         )
@@ -250,7 +307,25 @@ class ReportsExporter:
         return int(duration.total_seconds() // 60)
 
     @classmethod
-    def _get_vehicle_event_by_index(cls, raw_data, vehicle_id, idx):
+    def _get_vehicle_event_by_index(cls, raw_data: dict, vehicle_id: str, idx: int):
+        """Retrieves a vehicle event by its index.
+
+        >>> raw_data = {
+        ...     "vehicles": [
+        ...         {
+        ...             "vehicle_id": "1",
+        ...             "vehicle_events": [
+        ...                 {"vehicle_event_sequence": 0, "event": "event_0"},
+        ...                 {"vehicle_event_sequence": 1, "event": "event_1"},
+        ...             ],
+        ...         },
+        ...     ]
+        ... }
+        >>> ReportsExporter._get_vehicle_event_by_index(raw_data, "1", 0)
+        {'vehicle_event_sequence': 0, 'event': 'event_0'}
+        >>> ReportsExporter._get_vehicle_event_by_index(raw_data, "1", 1)
+        {'vehicle_event_sequence': 1, 'event': 'event_1'}
+        """
         vehicle = cls._get_object_by_id(raw_data["vehicles"], "vehicle_id", vehicle_id)
         vehicle_event = vehicle["vehicle_events"][idx]
         if str(vehicle_event["vehicle_event_sequence"]) != str(idx):
@@ -270,6 +345,14 @@ class ReportsExporter:
     def _process_duty_start_and_end_stops(
         cls, raw_data: dict, duty_id: str, row_idx: int, report: DataFrame
     ) -> None:
+        """Updates the report in-place with start and end stop descriptions for a given duty.
+
+        Args:
+            raw_data: The raw database (dict) containing all the objects.
+            duty_id: The ID of the duty to process.
+            row_idx: The index of the row in the report DataFrame to update.
+            report: The DataFrame to update with start and end stop descriptions.
+        """
         duty = cls._get_object_by_id(raw_data["duties"], "duty_id", duty_id)
         duty_vehicle_ids = unique_everseen(
             e["vehicle_id"]
@@ -294,6 +377,25 @@ class ReportsExporter:
 
     @classmethod
     def _get_relevant_service_trips(cls, raw_data, duty_id, duty_vehicle_ids):
+        """Returns a list of service trip IDs for a given duty and its vehicles.
+
+        >>> raw_data = {
+        ...     "vehicles": [
+        ...         {
+        ...             "vehicle_id": "1",
+        ...             "vehicle_events": [
+        ...                 {"vehicle_event_type": "service_trip", "trip_id": "trip_1", "duty_id": "duty_1"},
+        ...                 {"vehicle_event_type": "service_trip", "trip_id": "trip_2", "duty_id": "duty_1"},
+        ...                 {"vehicle_event_type": "service_trip", "trip_id": "trip_3", "duty_id": "duty_2"},
+        ...             ],
+        ...         },
+        ...     ]
+        ... }
+        >>> ReportsExporter._get_relevant_service_trips(raw_data, "duty_1", ["1"])
+        ['trip_1', 'trip_2']
+        >>> ReportsExporter._get_relevant_service_trips(raw_data, "duty_2", ["1"])
+        ['trip_3']
+        """
         service_trip_ids = []
         for vehicle_id in duty_vehicle_ids:
             vehicle = cls._get_object_by_id(
@@ -311,7 +413,26 @@ class ReportsExporter:
         return service_trip_ids
 
     @classmethod
-    def _get_stop_name_from_trip_id(cls, raw_data, trip_id, origin_or_destination):
+    def _get_stop_name_from_trip_id(
+        cls, raw_data: dict, trip_id: str, origin_or_destination: str
+    ):
+        """
+        Returns the stop name for a given trip ID and stop type (origin or destination).
+
+        >>> raw_data = {
+        ...     "trips": [
+        ...         {"trip_id": "1", "origin_stop_id": "stop_1", "destination_stop_id": "stop_2"},
+        ...     ],
+        ...     "stops": [
+        ...         {"stop_id": "stop_1", "stop_name": "Stop 1"},
+        ...         {"stop_id": "stop_2", "stop_name": "Stop 2"},
+        ...     ]
+        ... }
+        >>> ReportsExporter._get_stop_name_from_trip_id(raw_data, "1", "origin_stop_id")
+        'Stop 1'
+        >>> ReportsExporter._get_stop_name_from_trip_id(raw_data, "1", "destination_stop_id")
+        'Stop 2'
+        """
         origin_or_destination = (
             "origin_stop_id"
             if "origin" in origin_or_destination.lower()
@@ -341,6 +462,13 @@ class ReportsExporter:
 
         Returns:
             The object that matches specified id
+
+        >>> raw_data = [
+        ...     {"duty_id": "1", "name": "Duty 1"},
+        ...     {"duty_id": "2", "name": "Duty 2"}
+        ... ]
+        >>> ReportsExporter._get_object_by_id(raw_data, "duty_id", "1")
+        {'duty_id': '1', 'name': 'Duty 1'}
         """
         # TODO: checking whether the object is unique would be safer, but slower
         # I'll work with the assumption that either this never happens or using
@@ -394,6 +522,33 @@ class ReportsExporter:
 
         Returns:
             The start or end time of the duty event
+
+        >>> raw_data = {
+        ...     "duties": [
+        ...         {
+        ...             "duty_id": "1",
+        ...             "duty_events": [
+        ...                 {"duty_event_type": "sign_on", "start_time": "0.08:00", "end_time": "0.08:30"},
+        ...                 {"duty_event_type": "vehicle_event", "vehicle_id": "1", "vehicle_event_sequence": 0}
+        ...             ]
+        ...         }
+        ...     ],
+        ...     "vehicles": [
+        ...         {
+        ...             "vehicle_id": "1",
+        ...             "vehicle_events": [
+        ...                 {"vehicle_event_sequence": 0, "vehicle_event_type": "service_trip", "trip_id": "1"}
+        ...             ]
+        ...         }
+        ...     ],
+        ...     "trips": [
+        ...         {"trip_id": "1", "departure_time": "0.08:30", "arrival_time": "0.09:00"}
+        ...     ],
+        ...     "stops": []
+        ... }
+        >>> duty_event = raw_data["duties"][0]["duty_events"][1]
+        >>> ReportsExporter._get_duty_event_time(duty_event, raw_data, "start")
+        '0.08:30'
         """
         start_or_end = "start_time" if "start" in start_or_end.lower() else "end_time"
 
@@ -444,7 +599,11 @@ class ReportsExporter:
 
 
 def main():
-    pass
+    with open("./mini_json_dataset.json", "r") as f:
+        raw_data = load(f)
+    print(ReportsExporter.generate_duty_start_end_times_report(raw_data))
+    print(ReportsExporter.generate_duty_start_end_times_and_stops_report(raw_data))
+    print(ReportsExporter.generate_duty_breaks_report(raw_data))
 
 
 if __name__ == "__main__":
