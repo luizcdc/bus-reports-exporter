@@ -1,4 +1,5 @@
 from bisect import bisect_left
+from importlib.metadata import unique_everseen
 from typing import Optional
 
 from pandas import DataFrame
@@ -30,6 +31,109 @@ class ReportsExporter:
     }
 
     def __init__(self):
+        pass
+
+    # Step 1
+    @classmethod
+    def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
+        """Generates a spreadsheet report containing the start and end times of each duty
+
+        Args:
+            raw_data: The raw database (dict) containing all the objects
+
+        Returns:
+            A pandas DataFrame containing with the columns "Duty Id", "Start Time", "End Time".
+        """
+        cls._sort_all_raw_data_list(raw_data)
+        rows = []
+        for duty in raw_data["duties"]:
+            try:
+                duty_start_time = cls._get_duty_event_time(
+                    duty["duty_events"][0], raw_data, "start"
+                )
+                duty_end_time = cls._get_duty_event_time(
+                    duty["duty_events"][-1], raw_data, "end"
+                )
+
+                rows.append(
+                    (
+                        duty["duty_id"],
+                        cls._day_offset_time_to_simple_time(duty_start_time),
+                        cls._day_offset_time_to_simple_time(duty_end_time),
+                    )
+                )
+            except KeyError as e:
+                getLogger().warning(
+                    f"Skipping duty {duty['duty_id']} because "
+                    "one of the objects it directly or indirectly references is missing:"
+                    f" {e}"
+                )
+        return DataFrame(rows, columns=["Duty Id", "Start Time", "End Time"])
+
+    # Step 2
+    @classmethod
+    def generate_duty_start_end_times_and_stops_report(
+        cls, raw_data: dict
+    ) -> DataFrame:
+        report = cls.generate_duty_start_end_times_report(raw_data)
+        report["Start stop description"] = ""
+        report["End stop description"] = ""
+
+        for i, duty_id in report["Duty Id"].items():
+            try:
+                duty = cls._get_object_by_id(raw_data["duties"], "duty_id", duty_id)
+                duty_vehicle_ids = unique_everseen(
+                    e["vehicle_id"]
+                    for e in duty["duty_events"]
+                    if e["duty_event_type"] == DutyEventType.VEHICLE_EVENT
+                )
+
+                service_trip_ids = []
+                for vehicle_id in duty_vehicle_ids:
+                    vehicle = cls._get_object_by_id(
+                        raw_data["vehicles"],
+                        "vehicle_id",
+                        vehicle_id,
+                        is_objects_sorted=True,
+                    )
+                    service_trip_ids.extend(
+                        e["trip_id"]
+                        for e in vehicle["vehicle_events"]
+                        if e.get("vehicle_event_type") == VehicleEventType.SERVICE_TRIP
+                        and e.get("duty_id") == duty_id
+                    )
+
+                if not service_trip_ids:
+                    getLogger().warning(
+                        f"Skipping duty {duty_id} because it doesn't contain any service trips"
+                    )
+                    continue
+
+                first_trip_stop_id = cls._get_object_by_id(
+                    raw_data["trips"], "trip_id", service_trip_ids[0]
+                )["origin_stop_id"]
+                last_trip_stop_id = cls._get_object_by_id(
+                    raw_data["trips"], "trip_id", service_trip_ids[-1]
+                )["destination_stop_id"]
+
+                report.loc[i, "Start stop description"] = cls._get_object_by_id(
+                    raw_data["stops"], "stop_id", first_trip_stop_id
+                )["stop_name"]
+                report.loc[i, "End stop description"] = cls._get_object_by_id(
+                    raw_data["stops"], "stop_id", last_trip_stop_id
+                )["stop_name"]
+
+            except KeyError as e:
+                getLogger().warning(
+                    f"Skipping duty {duty_id} because "
+                    "one of the objects it directly or indirectly references is missing:"
+                    f" {e}"
+                )
+        return report
+
+    # Step 3
+    @staticmethod
+    def generate_duty_breaks_report(raw_data: dict) -> DataFrame:
         pass
 
     @classmethod
@@ -162,53 +266,6 @@ class ReportsExporter:
         for key in raw_data:
             if isinstance(raw_data[key], list) and key in cls.fields_to_sort_by_id:
                 raw_data[key].sort(key=lambda x: x[cls.fields_to_sort_by_id[key]])
-
-    # Step 1
-    @classmethod
-    def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
-        """Generates a spreadsheet report containing the start and end times of each duty
-
-        Args:
-            raw_data: The raw database (dict) containing all the objects
-
-        Returns:
-            A pandas DataFrame containing with the columns "Duty Id", "Start Time", "End Time".
-        """
-        cls._sort_all_raw_data_list(raw_data)
-        rows = []
-        for duty in raw_data["duties"]:
-            try:
-                duty_start_time = cls._get_duty_event_time(
-                    duty["duty_events"][0], raw_data, "start"
-                )
-                duty_end_time = cls._get_duty_event_time(
-                    duty["duty_events"][-1], raw_data, "end"
-                )
-
-                rows.append(
-                    (
-                        duty["duty_id"],
-                        cls._day_offset_time_to_simple_time(duty_start_time),
-                        cls._day_offset_time_to_simple_time(duty_end_time),
-                    )
-                )
-            except KeyError as e:
-                getLogger().warning(
-                    f"Skipping duty {duty['duty_id']} because "
-                    "one of the objects it directly or indirectly references is missing:"
-                    f" {e}"
-                )
-        return DataFrame(rows, columns=["Duty Id", "Start Time", "End Time"])
-
-    # Step 2
-    @staticmethod
-    def generate_duty_start_end_times_and_stops_report(raw_data: dict) -> DataFrame:
-        pass
-
-    # Step 3
-    @staticmethod
-    def generate_duty_breaks_report(raw_data: dict) -> DataFrame:
-        pass
 
 
 def main():
