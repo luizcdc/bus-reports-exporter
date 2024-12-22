@@ -99,7 +99,7 @@ class TestStep1(unittest.TestCase):
     def test_step_1__all_duty_ids_included_2(self):
         self._assert_all_duty_ids_included(self.whole_json_duties)
 
-    def assert_only_valid_duty_ids_included(self, raw_json):
+    def _assert_only_valid_duty_ids_included(self, raw_json):
         valid_duty_ids = set(duty["duty_id"] for duty in raw_json["duties"])
         report = ReportsExporter.generate_duty_start_end_times_report(raw_json)
 
@@ -110,10 +110,10 @@ class TestStep1(unittest.TestCase):
         )
 
     def test_step_1__only_valid_duty_ids_included(self):
-        self.assert_only_valid_duty_ids_included(self.test_json_duties)
+        self._assert_only_valid_duty_ids_included(self.test_json_duties)
 
     def test_2_step_1__only_valid_duty_ids_included(self):
-        self.assert_only_valid_duty_ids_included(self.whole_json_duties)
+        self._assert_only_valid_duty_ids_included(self.whole_json_duties)
 
 
 if __name__ == "__main__":
