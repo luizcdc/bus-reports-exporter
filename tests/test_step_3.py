@@ -95,8 +95,9 @@ class TestStep3(unittest.TestCase):
             )
 
         for i, duration in report["Break duration"].items():
-            self.assertTrue(
-                match(r"\d{1,3}", duration),
+            self.assertIsInstance(
+                duration,
+                int,
                 msg=(
                     f"'Break duration' column value at row {i} (duty_id: {report['Duty Id'][i]}) - '{duration}'"
                     f" doesn't match the expected format"
@@ -252,9 +253,9 @@ class TestStep3(unittest.TestCase):
                 "19:05",
                 "Montclair Transit Center",
                 "Pomona Transit Center",
-                "13:44",
+                "09:21",
                 263,
-                "Pomona",
+                "Pomona Yard",
             ],
             [
                 "47",
