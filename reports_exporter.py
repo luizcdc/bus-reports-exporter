@@ -119,17 +119,15 @@ class ReportsExporter:
                     f" {e}"
                 )
                 breaks = []
-            # The dataframe has one unique row by duty id at this moment. Now, we want
-            # to add a row for each break of the duty.
 
+            new_rows = []
             for break_ in breaks:
                 new_row = unique_duty_ids_report.loc[i].copy()
                 new_row["Break start time"] = break_[0]
                 new_row["Break duration"] = break_[1]
                 new_row["Break stop name"] = break_[2]
-                final_report = concat(
-                    [final_report, new_row.to_frame().T], ignore_index=True
-                )
+                new_rows.append(new_row)
+            final_report = concat([final_report, DataFrame(new_rows)], ignore_index=True)
         return final_report
 
     @classmethod
