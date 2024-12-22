@@ -228,6 +228,37 @@ class TestStep2(unittest.TestCase):
             self.whole_json_duties, "End stop description"
         )
 
+    def test_step_2__report_is_correct(self):
+        report = ReportsExporter.generate_duty_start_end_times_and_stops_report(
+            self.test_json_duties
+        )
+        report_expected = (
+            [
+                "37",
+                "05:30",
+                "19:05",
+                "Montclair Transit Center",
+                "Pomona Transit Center",
+            ],
+            [
+                "47",
+                "05:55",
+                "19:33",
+                "Montclair Transit Center",
+                "Montclair Transit Center",
+            ],
+            [
+                "1",
+                "03:25",
+                "11:39",
+                "Montclair Transit Center",
+                "Pomona Transit Center",
+            ],
+        )
+        self.assertEqual(len(report_expected), len(report.values))
+        for row in report_expected:
+            self.assertIn(row, report.values.tolist())
+
 
 if __name__ == "__main__":
     unittest.main()
