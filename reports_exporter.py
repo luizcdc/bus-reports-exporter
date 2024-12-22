@@ -26,6 +26,7 @@ class ReportsExporter:
 
     @staticmethod
     def _get_object_by_id(objects: list[dict], object_id_field: str, id_: object):
+        # TODO: if the raw data was sorted, a binary search would be better
         for obj in objects:
             if obj[object_id_field] == id_:
                 return obj
@@ -35,57 +36,50 @@ class ReportsExporter:
     def _day_offset_time_to_simple_time(date_string: str) -> str:
         return date_string[2:]
 
+    @classmethod
+    def _get_duty_event_time(
+        cls, duty_event: dict, raw_data: dict, start_or_end: str
+    ) -> str:
+        start_or_end = "start_time" if "start" in start_or_end.lower() else "end_time"
+
+        if duty_event["duty_event_type"] != DutyEventType.VEHICLE_EVENT:
+            return duty_event[start_or_end]
+
+        vehicle_event_idx = duty_event["vehicle_event_sequence"]
+        vehicle = cls._get_object_by_id(
+            raw_data["vehicles"], "vehicle_id", duty_event["vehicle_id"]
+        )
+        vehicle_event = vehicle["vehicle_events"][vehicle_event_idx]
+        if str(vehicle_event["vehicle_event_sequence"]) != str(vehicle_event_idx):
+            # TODO: decide whether to raise the exception, or just log the error
+            # and use the vehicle_event_sequence from the vehicle_event
+            raise ValueError(
+                "Inconsistent vehicle_event_sequence between duty_event and vehicle_event, cannot proceed"
+            )
+
+        if vehicle_event["vehicle_event_type"] != VehicleEventType.SERVICE_TRIP:
+            return vehicle_event[start_or_end]
+
+        start_or_end = (
+            "departure_time" if start_or_end == "start_time" else "arrival_time"
+        )
+        trip = cls._get_object_by_id(
+            raw_data["trips"], "trip_id", vehicle_event["trip_id"]
+        )
+        return trip[start_or_end]
+
     # Step 1
     @classmethod
     def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
         rows = []
         for duty in raw_data["duties"]:
-            first_event = duty["duty_events"][0]
-            last_event = duty["duty_events"][-1]
-            if first_event["duty_event_type"] != DutyEventType.VEHICLE_EVENT:
-                duty_start_time = first_event["start_time"]
-            else:
-                vehicle_id = first_event["vehicle_id"]
-                # vehicle_event_sequence uses 0-based indexing
-                vehicle_event_sequence = first_event["vehicle_event_sequence"]
-                vehicle_event = cls._get_object_by_id(
-                    raw_data["vehicles"], "vehicle_id", vehicle_id
-                )["vehicle_events"][vehicle_event_sequence]
-                if str(vehicle_event["vehicle_event_sequence"]) != str(
-                    vehicle_event_sequence
-                ):
-                    raise ValueError(
-                        "Inconsistend vehicle_event_sequence between duty_event and vehicle_event, cannot proceed"
-                    )
-                if vehicle_event["vehicle_event_type"] != VehicleEventType.SERVICE_TRIP:
-                    duty_start_time = vehicle_event["start_time"]
-                else:
-                    trip = cls._get_object_by_id(
-                        raw_data["trips"], "trip_id", vehicle_event["trip_id"]
-                    )
-                    duty_start_time = trip["departure_time"]
-            if last_event["duty_event_type"] != DutyEventType.VEHICLE_EVENT:
-                duty_end_time = last_event["end_time"]
-            else:
-                vehicle_id = last_event["vehicle_id"]
-                # vehicle_event_sequence uses 0-based indexing
-                vehicle_event_sequence = last_event["vehicle_event_sequence"]
-                vehicle_event = cls._get_object_by_id(
-                    raw_data["vehicles"], "vehicle_id", vehicle_id
-                )["vehicle_events"][vehicle_event_sequence]
-                if str(vehicle_event["vehicle_event_sequence"]) != str(
-                    vehicle_event_sequence
-                ):
-                    raise ValueError(
-                        "Inconsistend vehicle_event_sequence between duty_event and vehicle_event, cannot proceed"
-                    )
-                if vehicle_event["vehicle_event_type"] != VehicleEventType.SERVICE_TRIP:
-                    duty_end_time = vehicle_event["end_time"]
-                else:
-                    trip = cls._get_object_by_id(
-                        raw_data["trips"], "trip_id", vehicle_event["trip_id"]
-                    )
-                    duty_end_time = trip["arrival_time"]
+            duty_start_time = cls._get_duty_event_time(
+                duty["duty_events"][0], raw_data, "start"
+            )
+            duty_end_time = cls._get_duty_event_time(
+                duty["duty_events"][-1], raw_data, "end"
+            )
+
             rows.append(
                 (
                     duty["duty_id"],
