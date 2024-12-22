@@ -9,8 +9,10 @@ from re import match
 class TestStep1(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._test_json_duties = load(open("unittests_json.json", "r"))
-        cls._whole_json_duties = load(open("../mini_json_dataset.json", "r"))
+        with open("unittests_json.json", "r") as f:
+            cls._test_json_duties = load(f)
+        with open("../mini_json_dataset.json", "r") as f:
+            cls._whole_json_duties = load(f)
 
     def setUp(self):
         self.test_json_duties = copy.deepcopy(self._test_json_duties)
