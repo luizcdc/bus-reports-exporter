@@ -2,7 +2,7 @@ from typing import Any
 
 from pandas import DataFrame
 from enum import StrEnum
-# Enum of event types
+from logging import getLogger
 
 
 class DutyEventType(StrEnum):
@@ -28,7 +28,7 @@ class ReportsExporter:
     def _get_object_by_id(objects: list[dict], object_id_field: str, id_: object):
         # TODO: if the raw data was sorted, a binary search would be better
         for obj in objects:
-            if obj[object_id_field] == id_:
+            if obj.get(object_id_field) == id_:
                 return obj
         return None
 
@@ -51,10 +51,14 @@ class ReportsExporter:
         )
         vehicle_event = vehicle["vehicle_events"][vehicle_event_idx]
         if str(vehicle_event["vehicle_event_sequence"]) != str(vehicle_event_idx):
-            # TODO: decide whether to raise the exception, or just log the error
-            # and use the vehicle_event_sequence from the vehicle_event
-            raise ValueError(
-                "Inconsistent vehicle_event_sequence between duty_event and vehicle_event, cannot proceed"
+            vehicle_event = cls._get_object_by_id(
+                vehicle["vehicle_events"],
+                "vehicle_event_sequence",
+                vehicle_event_idx,
+            )
+            getLogger().warning(
+                "vehicle_event_sequence mismatch between duty_event and vehicle_event, "
+                "giving preferrence vehicle_event_sequence attribute of vehicle_event"
             )
 
         if vehicle_event["vehicle_event_type"] != VehicleEventType.SERVICE_TRIP:
