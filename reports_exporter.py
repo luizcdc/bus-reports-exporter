@@ -30,9 +30,6 @@ class ReportsExporter:
         "stops": "stop_id",
     }
 
-    def __init__(self):
-        pass
-
     # Step 1
     @classmethod
     def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
