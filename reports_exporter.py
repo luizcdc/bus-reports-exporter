@@ -601,9 +601,20 @@ class ReportsExporter:
 def main():
     with open("./mini_json_dataset.json", "r") as f:
         raw_data = load(f)
-    print(ReportsExporter.generate_duty_start_end_times_report(raw_data))
-    print(ReportsExporter.generate_duty_start_end_times_and_stops_report(raw_data))
-    print(ReportsExporter.generate_duty_breaks_report(raw_data))
+
+    step_1_report = ReportsExporter.generate_duty_start_end_times_report(raw_data)
+    step_2_report = ReportsExporter.generate_duty_start_end_times_and_stops_report(
+        raw_data
+    )
+    step_3_report = ReportsExporter.generate_duty_breaks_report(raw_data)
+
+    print(step_1_report.head())
+    print(step_2_report.head())
+    print(step_3_report.head())
+
+    step_1_report.to_csv("step_1_report.csv", index=False)
+    step_2_report.to_csv("step_2_report.csv", index=False)
+    step_3_report.to_csv("step_3_report.csv", index=False)
 
 
 if __name__ == "__main__":
