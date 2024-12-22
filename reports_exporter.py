@@ -81,55 +81,74 @@ class ReportsExporter:
 
         for i, duty_id in report["Duty Id"].items():
             try:
-                duty = cls._get_object_by_id(raw_data["duties"], "duty_id", duty_id)
-                duty_vehicle_ids = unique_everseen(
-                    e["vehicle_id"]
-                    for e in duty["duty_events"]
-                    if e["duty_event_type"] == DutyEventType.VEHICLE_EVENT
-                )
-
-                service_trip_ids = []
-                for vehicle_id in duty_vehicle_ids:
-                    vehicle = cls._get_object_by_id(
-                        raw_data["vehicles"],
-                        "vehicle_id",
-                        vehicle_id,
-                        is_objects_sorted=True,
-                    )
-                    service_trip_ids.extend(
-                        e["trip_id"]
-                        for e in vehicle["vehicle_events"]
-                        if e.get("vehicle_event_type") == VehicleEventType.SERVICE_TRIP
-                        and e.get("duty_id") == duty_id
-                    )
-
-                if not service_trip_ids:
-                    getLogger().warning(
-                        f"Skipping duty {duty_id} because it doesn't contain any service trips"
-                    )
-                    continue
-
-                first_trip_stop_id = cls._get_object_by_id(
-                    raw_data["trips"], "trip_id", service_trip_ids[0]
-                )["origin_stop_id"]
-                last_trip_stop_id = cls._get_object_by_id(
-                    raw_data["trips"], "trip_id", service_trip_ids[-1]
-                )["destination_stop_id"]
-
-                report.loc[i, "Start stop description"] = cls._get_object_by_id(
-                    raw_data["stops"], "stop_id", first_trip_stop_id
-                )["stop_name"]
-                report.loc[i, "End stop description"] = cls._get_object_by_id(
-                    raw_data["stops"], "stop_id", last_trip_stop_id
-                )["stop_name"]
-
+                cls._process_duty_start_and_end_stops(raw_data, duty_id, i, report)
             except KeyError as e:
                 getLogger().warning(
                     f"Skipping duty {duty_id} because "
                     "one of the objects it directly or indirectly references is missing:"
                     f" {e}"
                 )
-        return report
+        # TODO: Clarify whether to remove duty from report or leave stops in blank
+        #  when the duty has no service trips, but I'm assuming the former for now
+        return report.dropna(
+            subset=["Start stop description", "End stop description"], how="any"
+        )
+
+    @classmethod
+    def _process_duty_start_and_end_stops(
+        cls, raw_data: dict, duty_id: str, row_idx: int, report: DataFrame
+    ) -> None:
+        duty = cls._get_object_by_id(raw_data["duties"], "duty_id", duty_id)
+        duty_vehicle_ids = unique_everseen(
+            e["vehicle_id"]
+            for e in duty["duty_events"]
+            if e["duty_event_type"] == DutyEventType.VEHICLE_EVENT
+        )
+        service_trip_ids = cls._get_relevant_service_trips(
+            raw_data, duty_id, duty_vehicle_ids
+        )
+        if not service_trip_ids:
+            getLogger().warning(
+                f"Skipping duty {duty_id} because it doesn't contain any service trips"
+            )
+            return
+
+        report.loc[row_idx, "Start stop description"] = cls._get_stop_name_from_trip_id(
+            raw_data, service_trip_ids[0], "origin_stop_id"
+        )
+        report.loc[row_idx, "End stop description"] = cls._get_stop_name_from_trip_id(
+            raw_data, service_trip_ids[-1], "destination_stop_id"
+        )
+
+    @classmethod
+    def _get_relevant_service_trips(cls, raw_data, duty_id, duty_vehicle_ids):
+        service_trip_ids = []
+        for vehicle_id in duty_vehicle_ids:
+            vehicle = cls._get_object_by_id(
+                raw_data["vehicles"],
+                "vehicle_id",
+                vehicle_id,
+                is_objects_sorted=True,
+            )
+            service_trip_ids.extend(
+                e["trip_id"]
+                for e in vehicle["vehicle_events"]
+                if e.get("vehicle_event_type") == VehicleEventType.SERVICE_TRIP
+                and e.get("duty_id") == duty_id
+            )
+        return service_trip_ids
+
+    @classmethod
+    def _get_stop_name_from_trip_id(cls, raw_data, trip_id, origin_or_destination):
+        origin_or_destination = (
+            "origin_stop_id"
+            if "origin" in origin_or_destination.lower()
+            else "destination_stop_id"
+        )
+        trip = cls._get_object_by_id(raw_data["trips"], "trip_id", trip_id)
+        return cls._get_object_by_id(
+            raw_data["stops"], "stop_id", trip[origin_or_destination]
+        )["stop_name"]
 
     # Step 3
     @staticmethod
