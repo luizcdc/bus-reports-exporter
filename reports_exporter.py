@@ -25,16 +25,41 @@ class ReportsExporter:
         pass
 
     @staticmethod
-    def _get_object_by_id(objects: list[dict], object_id_field: str, id_: object):
+    def _get_object_by_id(objects: list[dict], object_id_key: str, id_: object):
+        """Finds an object in a list of objects by its id
+
+        Args:
+            objects: A list of objects
+            object_id_key: The name of the dict key that contains the id
+            id_: The id of the object to find
+
+        Returns:
+            The object that matches specified id
+        """
         # TODO: if the raw data was sorted, a binary search would be better
         # TODO: checking whether the object is unique would be slower, but safer
         for obj in objects:
-            if obj.get(object_id_field) == id_:
+            if obj.get(object_id_key) == id_:
                 return obj
-        raise KeyError(f"Object with {object_id_field}=={id_} not found")
+        raise KeyError(f"Object with {object_id_key}=={id_} not found")
 
     @staticmethod
     def _day_offset_time_to_simple_time(date_string: str) -> str:
+        """Converts a time string with a day offset to a simple time string
+
+        Args:
+
+            date_string: A string representing a time with a day offset, e.g. "1.12:34"
+
+        Returns:
+            A string representing a time without a day offset, e.g. "12:34"
+
+        >>> ReportsExporter._day_offset_time_to_simple_time("1.02:34")
+        '02:34'
+        >>> ReportsExporter._day_offset_time_to_simple_time("0.12:34")
+        '12:34'
+
+        """
         return date_string[2:]
 
     @classmethod
@@ -88,6 +113,14 @@ class ReportsExporter:
     # Step 1
     @classmethod
     def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
+        """Generates a spreadsheet report containing the start and end times of each duty
+
+        Args:
+            raw_data: The raw database (dict) containing all the objects
+
+        Returns:
+            A pandas DataFrame containing with the columns "Duty Id", "Start Time", "End Time".
+        """
         rows = []
         for duty in raw_data["duties"]:
             try:
