@@ -172,3 +172,4 @@ cython_debug/
 
 # Raw data
 mini_json_dataset.json
+tests/unittests_json.json
