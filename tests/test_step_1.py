@@ -23,20 +23,20 @@ class TestStep1(unittest.TestCase):
 
         # I test separately for extra, missing and the order of columns because
         # test failure is a diagnostic tool, and being more specific is better
-
+        necessary_columns = ("Duty Id", "Start Time", "End Time")
         self.assertEqual(
-            set(report.columns) - {"Duty Id", "Start Time", "End Time"},
+            set(report.columns) - set(necessary_columns),
             set(),
             msg="There are extra columns in the report",
         )
         self.assertEqual(
-            {"Duty Id", "Start Time", "End Time"} - set(report.columns),
+            set(necessary_columns) - set(report.columns),
             set(),
             msg="There are missing columns in the report",
         )
         self.assertEqual(
             tuple(report.columns),
-            ("Duty Id", "Start Time", "End Time"),
+            necessary_columns,
             msg="Columns are not in the expected order",
         )
 
@@ -47,18 +47,28 @@ class TestStep1(unittest.TestCase):
         self._assert_has_necessary_fields(self.whole_json_duties)
 
     def _assert_types_are_correct_and_values_within_range(self, raw_json):
-        report = ReportsExporter.generate_duty_start_end_times_report(raw_json)
-
-        # duty_ids are strings, I don't know whether any validation is applicable
-
-        self.assertTrue(
-            all(match(r"\d{2}:\d{2}", start) for start in report["Start Time"]),
-            msg="'Start time' column values don't match the expected format",
+        report = ReportsExporter.generate_duty_start_end_times_report(
+            raw_json
         )
-        self.assertTrue(
-            all(match(r"\d{2}:\d{2}", end) for end in report["End Time"]),
-            msg="'End time' column values don't match the expected format",
-        )
+
+        for i, start in report["Start Time"].items():
+            self.assertTrue(
+                match(r"\d{2}:\d{2}", start),
+                msg=(
+                    f"'Start time' column value at row {i} (duty_id: {report['Duty Id'][i]}) - '{start}'"
+                    f" doesn't match the expected format"
+                ),
+            )
+
+        for i, end in report["End Time"].items():
+            self.assertTrue(
+                match(r"\d{2}:\d{2}", end),
+                msg=(
+                    f"'End time' column value at row {i} (duty_id: {report['Duty Id'][i]})"
+                    f" - '{end}' doesn't match the expected format"
+                ),
+            )
+
 
     def test_step_1__types_are_correct_and_values_within_range(self):
         self._assert_types_are_correct_and_values_within_range(self.test_json_duties)
@@ -69,10 +79,15 @@ class TestStep1(unittest.TestCase):
     def _assert_duty_ids_are_unique(self, raw_json):
         report = ReportsExporter.generate_duty_start_end_times_report(raw_json)
 
+        not_unique_list = (
+            report["Duty Id"]
+            .value_counts()[report["Duty Id"].value_counts() > 1]
+            .index.tolist()
+        )
         self.assertEqual(
-            report["Duty Id"].nunique(),
-            len(report),
-            msg="Some duty_ids appear more than once in the report",
+            len(not_unique_list),
+            0,
+            msg=f"Some duty_ids appear more than once in the report: {not_unique_list}",
         )
 
     def test_step_1__duty_ids_are_unique(self):
@@ -106,7 +121,7 @@ class TestStep1(unittest.TestCase):
         self.assertEqual(
             set(report["Duty Id"]) - valid_duty_ids,
             set(),
-            msg="Non-existent duty_ids included",
+            msg="Non-existent duty_ids included in the report.",
         )
 
     def test_step_1__only_valid_duty_ids_included(self):
@@ -114,6 +129,17 @@ class TestStep1(unittest.TestCase):
 
     def test_2_step_1__only_valid_duty_ids_included(self):
         self._assert_only_valid_duty_ids_included(self.whole_json_duties)
+
+    def test_step_1__report_is_correct(self):
+        report = ReportsExporter.generate_duty_start_end_times_report(self.test_json_duties)
+        report_expected = (
+            ["37", "05:30", "19:05"],
+            ["47", "05:55", "19:33"],
+            ["1", "03:25", "11:39"],
+        )
+        self.assertEqual(len(report_expected), len(report.values))
+        for row in report_expected:
+            self.assertIn(row, report.values.tolist())
 
 
 if __name__ == "__main__":

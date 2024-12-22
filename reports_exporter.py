@@ -86,7 +86,6 @@ class ReportsExporter:
         '02:34'
         >>> ReportsExporter._day_offset_time_to_simple_time("0.12:34")
         '12:34'
-
         """
         return date_string[2:]
 
