@@ -106,12 +106,19 @@ class ReportsExporter:
 
     # Step 3
     @classmethod
-    def generate_duty_breaks_report(cls, raw_data: dict) -> DataFrame:
+    def generate_duty_breaks_report(
+        cls,
+        raw_data: dict,
+        min_duration_mins: int = 16,
+        explicit_break_event_types: tuple[str] = tuple(),
+    ) -> DataFrame:
         """
-        Generates a report with all the breaks of each duty which are at least 16 minutes long.
+        Generates a report with all the breaks of each duty which are at least min_duration_mins long.
 
         Args:
             raw_data: The raw database (dict) containing all the objects.
+            min_duration_mins: The minimum duration of a relevant break in minutes.
+            explicit_break_event_types: The duty or vehicle event types that should be considered as breaks.
 
         Returns:
             A pandas DataFrame containing the columns "Duty Id", "Start Time", "End Time",
@@ -133,7 +140,12 @@ class ReportsExporter:
 
         for i, duty_id in unique_duty_ids_report["Duty Id"].items():
             try:
-                breaks = cls._calculate_breaks(raw_data, duty_id, min_duration_mins=16)
+                breaks = cls._calculate_breaks(
+                    raw_data,
+                    duty_id,
+                    min_duration_mins=min_duration_mins,
+                    explicit_break_event_types=explicit_break_event_types,
+                )
             except KeyError as e:
                 getLogger().warning(
                     f"Skipping duty {duty_id} because "
