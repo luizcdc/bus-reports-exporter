@@ -151,7 +151,7 @@ class TestStep2(unittest.TestCase):
         self.assertEqual(
             set(report["Duty Id"]) - valid_duty_ids,
             set(),
-            msg=("Non-existent duty_ids included in the report."),
+            msg="Non-existent duty_ids included in the report.",
         )
 
     def test_step_2__only_valid_duty_ids_included(self):
