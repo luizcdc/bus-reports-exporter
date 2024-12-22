@@ -1,4 +1,5 @@
-from typing import Any
+from bisect import bisect_left
+from typing import Optional
 
 from pandas import DataFrame
 from enum import StrEnum
@@ -21,26 +22,53 @@ class VehicleEventType(StrEnum):
 
 
 class ReportsExporter:
+    fields_to_sort_by_id = {
+        "duties": "duty_id",
+        "vehicles": "vehicle_id",
+        "trips": "trip_id",
+        "stops": "stop_id",
+    }
+
     def __init__(self):
         pass
 
-    @staticmethod
-    def _get_object_by_id(objects: list[dict], object_id_key: str, id_: object):
+    @classmethod
+    def _get_object_by_id(
+        cls,
+        objects: list[dict],
+        object_id_key: str,
+        id_: object,
+        is_objects_sorted: Optional[bool] = None,
+    ):
         """Finds an object in a list of objects by its id
 
         Args:
             objects: A list of objects
             object_id_key: The name of the dict key that contains the id
             id_: The id of the object to find
+            is_objects_sorted: Enables binary search (faster),
+                                provided that the objects list is sorted by id
 
         Returns:
             The object that matches specified id
         """
-        # TODO: if the raw data was sorted, a binary search would be better
-        # TODO: checking whether the object is unique would be slower, but safer
-        for obj in objects:
-            if obj.get(object_id_key) == id_:
-                return obj
+        # TODO: checking whether the object is unique would be safer, but slower
+        # I'll work with the assumption that either this never happens or using
+        # the first match is fine
+        if is_objects_sorted is None:
+            is_objects_sorted = object_id_key in cls.fields_to_sort_by_id.values()
+
+        # Linear search
+        if not is_objects_sorted:
+            for obj in objects:
+                if obj.get(object_id_key) == id_:
+                    return obj
+
+        # Binary search:
+        idx = bisect_left(objects, id_, key=lambda x: x.get(object_id_key))
+        if idx != len(objects) and objects[idx].get(object_id_key) == id_:
+            return objects[idx]
+
         raise KeyError(f"Object with {object_id_key}=={id_} not found")
 
     @staticmethod
@@ -93,6 +121,7 @@ class ReportsExporter:
                 vehicle["vehicle_events"],
                 "vehicle_event_sequence",
                 vehicle_event_idx,
+                is_objects_sorted=False,
             )
             getLogger().warning(
                 "vehicle_event_sequence mismatch between duty_event and vehicle_event, "
@@ -110,6 +139,31 @@ class ReportsExporter:
         )
         return trip[start_or_end]
 
+    @classmethod
+    def _sort_all_raw_data_list(cls, raw_data: dict):
+        """Sorts all lists within the raw_data dict in-place by their item ids
+
+        Args:
+            raw_data: The raw database (dict) containing all the objects
+
+        >>> raw_data = {
+        ...     "duties": [
+        ...         {"duty_id": "2"},
+        ...         {"duty_id": "1"},
+        ...     ],
+        ...     "vehicles": [
+        ...         {"vehicle_id": "2"},
+        ...         {"vehicle_id": "1"},
+        ...     ],
+        ... }
+        >>> ReportsExporter._sort_all_raw_data_list(raw_data)
+        >>> raw_data
+        {'duties': [{'duty_id': '1'}, {'duty_id': '2'}], 'vehicles': [{'vehicle_id': '1'}, {'vehicle_id': '2'}]}
+        """
+        for key in raw_data:
+            if isinstance(raw_data[key], list) and key in cls.fields_to_sort_by_id:
+                raw_data[key].sort(key=lambda x: x[cls.fields_to_sort_by_id[key]])
+
     # Step 1
     @classmethod
     def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
@@ -121,6 +175,7 @@ class ReportsExporter:
         Returns:
             A pandas DataFrame containing with the columns "Duty Id", "Start Time", "End Time".
         """
+        cls._sort_all_raw_data_list(raw_data)
         rows = []
         for duty in raw_data["duties"]:
             try:
