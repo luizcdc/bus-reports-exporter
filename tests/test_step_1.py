@@ -47,9 +47,7 @@ class TestStep1(unittest.TestCase):
         self._assert_has_necessary_fields(self.whole_json_duties)
 
     def _assert_types_are_correct_and_values_within_range(self, raw_json):
-        report = ReportsExporter.generate_duty_start_end_times_report(
-            raw_json
-        )
+        report = ReportsExporter.generate_duty_start_end_times_report(raw_json)
 
         for i, start in report["Start Time"].items():
             self.assertTrue(
@@ -68,7 +66,6 @@ class TestStep1(unittest.TestCase):
                     f" - '{end}' doesn't match the expected format"
                 ),
             )
-
 
     def test_step_1__types_are_correct_and_values_within_range(self):
         self._assert_types_are_correct_and_values_within_range(self.test_json_duties)
@@ -131,7 +128,9 @@ class TestStep1(unittest.TestCase):
         self._assert_only_valid_duty_ids_included(self.whole_json_duties)
 
     def test_step_1__report_is_correct(self):
-        report = ReportsExporter.generate_duty_start_end_times_report(self.test_json_duties)
+        report = ReportsExporter.generate_duty_start_end_times_report(
+            self.test_json_duties
+        )
         report_expected = (
             ["37", "05:30", "19:05"],
             ["47", "05:55", "19:33"],

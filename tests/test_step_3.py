@@ -1,5 +1,6 @@
 import unittest
 
+
 class TestStep3(unittest.TestCase):
     def test_step_3__has_necessary_fields(self):
         pass
@@ -30,6 +31,5 @@ class TestStep3(unittest.TestCase):
         pass
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
