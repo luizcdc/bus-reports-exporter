@@ -55,6 +55,7 @@ class TestStep3(unittest.TestCase):
         self._assert_has_necessary_fields(self.whole_json_duties)
 
     def _assert_types_are_correct_and_values_within_range(self, raw_json):
+        min_relevant_break_duration = 15
         report = ReportsExporter.generate_duty_breaks_report(raw_json)
 
         for i, start in report["Start Time"].items():
@@ -99,6 +100,14 @@ class TestStep3(unittest.TestCase):
                 msg=(
                     f"'Break duration' column value at row {i} (duty_id: {report['Duty Id'][i]}) - '{duration}'"
                     f" doesn't match the expected format"
+                ),
+            )
+            self.assertGreater(
+                int(duration),
+                min_relevant_break_duration,
+                msg=(
+                    f"'Break duration' column value at row {i} (duty_id: {report['Duty Id'][i]}) - '{duration}'"
+                    f" is less than {min_relevant_break_duration} minutes"
                 ),
             )
 
@@ -206,10 +215,11 @@ class TestStep3(unittest.TestCase):
             self.whole_json_duties, "End stop description"
         )
 
-    # test: break start time is always greater than duty start time
-    def test_step_3__break_start_time_greater_than_duty_start_time(self):
+    def test_step_3__break_start_time_after_duty_start_time(self):
         report = ReportsExporter.generate_duty_breaks_report(self.test_json_duties)
-        for i, (break_start_time, start_time) in report[["Break start time", "Start Time"]].iterrows():
+        for i, (break_start_time, start_time) in report[
+            ["Break start time", "Start Time"]
+        ].iterrows():
             self.assertGreaterEqual(
                 break_start_time,
                 start_time,
@@ -219,9 +229,33 @@ class TestStep3(unittest.TestCase):
                 ),
             )
 
+    def test_step_3__break_start_time_before_duty_start_time(self):
+        report = ReportsExporter.generate_duty_breaks_report(self.test_json_duties)
+        for i, (break_start_time, end_time) in report[
+            ["Break start time", "End Time"]
+        ].iterrows():
+            self.assertLess(
+                break_start_time,
+                end_time,
+                msg=(
+                    f"Break start time ({break_start_time}) is not less than duty end time ({end_time})"
+                    f" at row {i} (duty_id: {report['Duty Id'][i]})"
+                ),
+            )
+
     def test_step_3__report_is_correct(self):
         report = ReportsExporter.generate_duty_breaks_report(self.test_json_duties)
         report_expected = (
+            [
+                "37",
+                "05:30",
+                "19:05",
+                "Montclair Transit Center",
+                "Pomona Transit Center",
+                "13:44",
+                263,
+                "Pomona",
+            ],
             [
                 "37",
                 "05:30",
