@@ -27,10 +27,11 @@ class ReportsExporter:
     @staticmethod
     def _get_object_by_id(objects: list[dict], object_id_field: str, id_: object):
         # TODO: if the raw data was sorted, a binary search would be better
+        # TODO: checking whether the object is unique would be slower, but safer
         for obj in objects:
             if obj.get(object_id_field) == id_:
                 return obj
-        return None
+        raise KeyError(f"Object with {object_id_field}=={id_} not found")
 
     @staticmethod
     def _day_offset_time_to_simple_time(date_string: str) -> str:
@@ -40,6 +41,18 @@ class ReportsExporter:
     def _get_duty_event_time(
         cls, duty_event: dict, raw_data: dict, start_or_end: str
     ) -> str:
+        """Finds the start or end time of a duty event, even if indirectly expressed
+
+        It goes down the hierarchy of references until it finds a concrete event time.
+
+        Args:
+            duty_event: A duty event object
+            raw_data: The raw database (dict) containing all the objects
+            start_or_end: specifies whether to return the start or end time (should contain "start" or "end")
+
+        Returns:
+            The start or end time of the duty event
+        """
         start_or_end = "start_time" if "start" in start_or_end.lower() else "end_time"
 
         if duty_event["duty_event_type"] != DutyEventType.VEHICLE_EVENT:
@@ -77,20 +90,27 @@ class ReportsExporter:
     def generate_duty_start_end_times_report(cls, raw_data: dict) -> DataFrame:
         rows = []
         for duty in raw_data["duties"]:
-            duty_start_time = cls._get_duty_event_time(
-                duty["duty_events"][0], raw_data, "start"
-            )
-            duty_end_time = cls._get_duty_event_time(
-                duty["duty_events"][-1], raw_data, "end"
-            )
-
-            rows.append(
-                (
-                    duty["duty_id"],
-                    cls._day_offset_time_to_simple_time(duty_start_time),
-                    cls._day_offset_time_to_simple_time(duty_end_time),
+            try:
+                duty_start_time = cls._get_duty_event_time(
+                    duty["duty_events"][0], raw_data, "start"
                 )
-            )
+                duty_end_time = cls._get_duty_event_time(
+                    duty["duty_events"][-1], raw_data, "end"
+                )
+
+                rows.append(
+                    (
+                        duty["duty_id"],
+                        cls._day_offset_time_to_simple_time(duty_start_time),
+                        cls._day_offset_time_to_simple_time(duty_end_time),
+                    )
+                )
+            except KeyError as e:
+                getLogger().warning(
+                    f"Skipping duty {duty['duty_id']} because "
+                    "one of the objects it directly or indirectly references is missing:"
+                    f" {e}"
+                )
         return DataFrame(rows, columns=["Duty Id", "Start Time", "End Time"])
 
     # Step 2
