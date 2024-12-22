@@ -1,8 +1,11 @@
+import copy
 from bisect import bisect_left
+from datetime import datetime
+
 from more_itertools import unique_everseen
 from typing import Optional
 
-from pandas import DataFrame
+from pandas import DataFrame, concat
 from enum import StrEnum
 from logging import getLogger
 
@@ -91,6 +94,180 @@ class ReportsExporter:
             subset=["Start stop description", "End stop description"], how="any"
         )
 
+    # Step 3
+    @classmethod
+    def generate_duty_breaks_report(cls, raw_data: dict) -> DataFrame:
+        unique_duty_ids_report = cls.generate_duty_start_end_times_and_stops_report(
+            raw_data
+        )
+
+        final_report = DataFrame(
+            columns=[
+                *list(unique_duty_ids_report.columns),
+                "Break start time",
+                "Break duration",
+                "Break stop name",
+            ]
+        )
+        for i, duty_id in unique_duty_ids_report["Duty Id"].items():
+            try:
+                breaks = cls._calculate_breaks(raw_data, duty_id, min_duration_mins=16)
+            except KeyError as e:
+                getLogger().warning(
+                    f"Skipping duty {duty_id} because "
+                    "one of the objects it directly or indirectly references is missing:"
+                    f" {e}"
+                )
+                breaks = []
+            # The dataframe has one unique row by duty id at this moment. Now, we want
+            # to add a row for each break of the duty.
+
+            for break_ in breaks:
+                new_row = unique_duty_ids_report.loc[i].copy()
+                new_row["Break start time"] = break_[0]
+                new_row["Break duration"] = break_[1]
+                new_row["Break stop name"] = break_[2]
+                final_report = concat(
+                    [final_report, new_row.to_frame().T], ignore_index=True
+                )
+        return final_report
+
+    @classmethod
+    def _calculate_breaks(
+        cls,
+        raw_data: dict,
+        duty_id: str,
+        min_duration_mins: int,
+        explicit_break_event_types: tuple[str] = tuple(),
+    ) -> list[tuple]:
+        def _transform_raw_breaks(raw_breaks, min_duration_mins=min_duration_mins):
+            return [
+                (
+                    cls._day_offset_time_to_simple_time(break_[0]),
+                    break_[1],
+                    cls._get_object_by_id(raw_data["stops"], "stop_id", break_[2])[
+                        "stop_name"
+                    ],
+                )
+                for break_ in raw_breaks
+                if break_[1] >= min_duration_mins
+            ]
+
+        duty_events = cls._populate_duty_events_with_details(
+            raw_data, duty_id, explicit_break_event_types
+        )
+
+        explicit_breaks = [
+            (
+                event["start_time"],
+                cls._calculate_duration_in_minutes(
+                    event["start_time"], event["end_time"]
+                ),
+                event["destination_stop_id"],
+            )
+            for event in duty_events
+            if event["is_break_type"]
+        ]
+
+        implicit_breaks = []
+        for i in range(1, len(duty_events)):
+            prev_event = duty_events[i - 1]
+            curr_event = duty_events[i]
+            prev_end_time = prev_event["end_time"]
+            curr_start_time = curr_event["start_time"]
+
+            if prev_end_time != curr_start_time:
+                implicit_breaks.append(
+                    (
+                        prev_end_time,
+                        cls._calculate_duration_in_minutes(
+                            prev_end_time, curr_start_time
+                        ),
+                        prev_event["destination_stop_id"],
+                    )
+                )
+        return _transform_raw_breaks(
+            sorted(explicit_breaks + implicit_breaks, key=lambda x: x[0])
+        )
+
+    @classmethod
+    def _populate_duty_events_with_details(
+        cls, raw_data: dict, duty_id: str, explicit_break_event_types: tuple[str]
+    ) -> list[dict]:
+        duty_events = copy.deepcopy(
+            cls._get_object_by_id(raw_data["duties"], "duty_id", duty_id)["duty_events"]
+        )
+        for duty_event in duty_events:
+            if duty_event["duty_event_type"] != DutyEventType.VEHICLE_EVENT:
+                duty_event["is_break_type"] = (
+                    duty_event["duty_event_type"] in explicit_break_event_types
+                )
+                continue
+            vehicle_event = cls._get_vehicle_event_by_index(
+                raw_data,
+                duty_event["vehicle_id"],
+                duty_event["vehicle_event_sequence"],
+            )
+
+            if vehicle_event["vehicle_event_type"] != VehicleEventType.SERVICE_TRIP:
+                duty_event["start_time"] = vehicle_event["start_time"]
+                duty_event["end_time"] = vehicle_event["end_time"]
+                duty_event["origin_stop_id"] = vehicle_event["origin_stop_id"]
+                duty_event["destination_stop_id"] = vehicle_event["destination_stop_id"]
+                duty_event["is_break_type"] = (
+                    vehicle_event["vehicle_event_type"] in explicit_break_event_types
+                )
+            else:
+                trip = cls._get_object_by_id(
+                    raw_data["trips"], "trip_id", vehicle_event["trip_id"]
+                )
+                duty_event["start_time"] = trip["departure_time"]
+                duty_event["end_time"] = trip["arrival_time"]
+                duty_event["origin_stop_id"] = trip["origin_stop_id"]
+                duty_event["destination_stop_id"] = trip["destination_stop_id"]
+                duty_event["is_break_type"] = False
+        return duty_events
+
+    @staticmethod
+    def _calculate_duration_in_minutes(start_time: str, end_time: str) -> int:
+        """
+        Calculate duration in minutes between two times with day offsets.
+
+        >>> ReportsExporter._calculate_duration_in_minutes("0.23:59", "1.00:00")
+        1
+        >>> ReportsExporter._calculate_duration_in_minutes("0.12:00", "0.14:00")
+        120
+        >>> ReportsExporter._calculate_duration_in_minutes("0.00:00", "1.23:59")
+        2879
+        """
+        start_day, start_time = start_time.split(".")
+        end_day, end_time = end_time.split(".")
+
+        start_day, end_day = str(int(start_day) + 1), str(int(end_day) + 1)
+
+        start_date = datetime.strptime(f"{start_day}.{start_time}", "%d.%H:%M")
+        end_date = datetime.strptime(f"{end_day}.{end_time}", "%d.%H:%M")
+
+        duration = end_date - start_date
+        return int(duration.total_seconds() // 60)
+
+    @classmethod
+    def _get_vehicle_event_by_index(cls, raw_data, vehicle_id, idx):
+        vehicle = cls._get_object_by_id(raw_data["vehicles"], "vehicle_id", vehicle_id)
+        vehicle_event = vehicle["vehicle_events"][idx]
+        if str(vehicle_event["vehicle_event_sequence"]) != str(idx):
+            vehicle_event = cls._get_object_by_id(
+                vehicle["vehicle_events"],
+                "vehicle_event_sequence",
+                idx,
+                is_objects_sorted=False,
+            )
+            getLogger().warning(
+                "vehicle_event_sequence mismatch between duty_event and vehicle_event, "
+                "giving preferrence vehicle_event_sequence attribute of vehicle_event"
+            )
+        return vehicle_event
+
     @classmethod
     def _process_duty_start_and_end_stops(
         cls, raw_data: dict, duty_id: str, row_idx: int, report: DataFrame
@@ -146,11 +323,6 @@ class ReportsExporter:
         return cls._get_object_by_id(
             raw_data["stops"], "stop_id", trip[origin_or_destination]
         )["stop_name"]
-
-    # Step 3
-    @staticmethod
-    def generate_duty_breaks_report(raw_data: dict) -> DataFrame:
-        pass
 
     @classmethod
     def _get_object_by_id(
@@ -230,22 +402,11 @@ class ReportsExporter:
         if duty_event["duty_event_type"] != DutyEventType.VEHICLE_EVENT:
             return duty_event[start_or_end]
 
-        vehicle_event_idx = duty_event["vehicle_event_sequence"]
-        vehicle = cls._get_object_by_id(
-            raw_data["vehicles"], "vehicle_id", duty_event["vehicle_id"]
+        vehicle_event = cls._get_vehicle_event_by_index(
+            raw_data,
+            vehicle_id=duty_event["vehicle_id"],
+            idx=duty_event["vehicle_event_sequence"],
         )
-        vehicle_event = vehicle["vehicle_events"][vehicle_event_idx]
-        if str(vehicle_event["vehicle_event_sequence"]) != str(vehicle_event_idx):
-            vehicle_event = cls._get_object_by_id(
-                vehicle["vehicle_events"],
-                "vehicle_event_sequence",
-                vehicle_event_idx,
-                is_objects_sorted=False,
-            )
-            getLogger().warning(
-                "vehicle_event_sequence mismatch between duty_event and vehicle_event, "
-                "giving preferrence vehicle_event_sequence attribute of vehicle_event"
-            )
 
         if vehicle_event["vehicle_event_type"] != VehicleEventType.SERVICE_TRIP:
             return vehicle_event[start_or_end]
