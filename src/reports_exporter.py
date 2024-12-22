@@ -599,7 +599,7 @@ class ReportsExporter:
 
 
 def main():
-    with open("./mini_json_dataset.json", "r") as f:
+    with open("../mini_json_dataset.json", "r") as f:
         raw_data = load(f)
 
     step_1_report = ReportsExporter.generate_duty_start_end_times_report(raw_data)

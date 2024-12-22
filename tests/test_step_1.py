@@ -2,8 +2,10 @@ import copy
 import unittest
 from json import load
 
-from reports_exporter import ReportsExporter
+
 from re import match
+
+from src import ReportsExporter
 
 
 class TestStep1(unittest.TestCase):

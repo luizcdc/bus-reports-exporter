@@ -2,7 +2,7 @@ import copy
 import unittest
 from json import load
 
-from reports_exporter import ReportsExporter
+from src import ReportsExporter
 from re import match
 
 
