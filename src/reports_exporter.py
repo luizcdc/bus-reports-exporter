@@ -2,6 +2,8 @@ import copy
 from bisect import bisect_left
 from datetime import datetime
 from json import load
+from collections import Counter
+from jsonschema import validate, ValidationError
 
 from more_itertools import unique_everseen
 from typing import Optional
@@ -45,6 +47,7 @@ class ReportsExporter:
         Returns:
             A pandas DataFrame containing with the columns "Duty Id", "Start Time", "End Time".
         """
+        cls._validate_json_data(raw_data)
         cls._sort_all_raw_data_list(raw_data)
         rows = []
         for duty in raw_data["duties"]:
@@ -165,6 +168,217 @@ class ReportsExporter:
                 [final_report, DataFrame(new_rows)], ignore_index=True
             )
         return final_report
+
+    @classmethod
+    def _validate_json_data(cls, json_data: dict) -> None:
+        """
+        Validates the JSON dataset against expected schemas for duties, vehicles, trips, and stops.
+
+        The validation isn't strict about extra fields, but it is strict about missing fields.
+
+        Args:
+            json_data: The raw database (dict) containing all the objects.
+
+        Raises:
+            jsonschema.exceptions.ValidationError: If the JSON data does not conform to the schema.
+            AssertionError: If there are distinct entries with the same ID in the same object type.
+        """
+        day_offset_time_validation = {
+            "type": "string",
+            "pattern": r"^\d{1,2}\.\d{2}(:\d{2})?$",
+        }
+        duties_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "duty_id": {"type": "string"},
+                    "duty_events": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "oneOf": [
+                                {
+                                    "properties": {
+                                        "duty_event_sequence": {"type": "string"},
+                                        "duty_event_type": {"const": "vehicle_event"},
+                                        "vehicle_event_sequence": {"type": "integer"},
+                                        "vehicle_id": {"type": "string"},
+                                    },
+                                    "required": [
+                                        "duty_event_sequence",
+                                        "duty_event_type",
+                                        "vehicle_event_sequence",
+                                        "vehicle_id",
+                                    ],
+                                },
+                                {
+                                    "properties": {
+                                        "duty_event_sequence": {"type": "string"},
+                                        "duty_event_type": {
+                                            "enum": ["taxi", "sign_on"]
+                                        },
+                                        "start_time": day_offset_time_validation,
+                                        "end_time": day_offset_time_validation,
+                                        "origin_stop_id": {"type": "string"},
+                                        "destination_stop_id": {"type": "string"},
+                                    },
+                                    "required": [
+                                        "duty_event_sequence",
+                                        "duty_event_type",
+                                        "start_time",
+                                        "end_time",
+                                        "origin_stop_id",
+                                        "destination_stop_id",
+                                    ],
+                                },
+                            ],
+                        },
+                    },
+                },
+                "required": ["duty_id", "duty_events"],
+            },
+        }
+        vehicles_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "vehicle_id": {"type": "string"},
+                    "vehicle_events": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "oneOf": [
+                                {
+                                    "properties": {
+                                        "vehicle_event_sequence": {"type": "string"},
+                                        "vehicle_event_type": {
+                                            "enum": [
+                                                VehicleEventType.ATTENDANCE.value,
+                                                VehicleEventType.DEADHEAD.value,
+                                                VehicleEventType.DEPOT_PULL_IN.value,
+                                                VehicleEventType.DEPOT_PULL_OUT.value,
+                                                VehicleEventType.PRE_TRIP.value,
+                                            ]
+                                        },
+                                        "start_time": day_offset_time_validation,
+                                        "end_time": day_offset_time_validation,
+                                        "origin_stop_id": {"type": "string"},
+                                        "destination_stop_id": {"type": "string"},
+                                        "duty_id": {"type": "string"},
+                                    },
+                                    "required": [
+                                        "vehicle_event_sequence",
+                                        "vehicle_event_type",
+                                        "start_time",
+                                        "end_time",
+                                        "origin_stop_id",
+                                        "destination_stop_id",
+                                        "duty_id",
+                                    ],
+                                },
+                                {
+                                    "properties": {
+                                        "vehicle_event_sequence": {"type": "string"},
+                                        "vehicle_event_type": {
+                                            "const": VehicleEventType.SERVICE_TRIP.value
+                                        },
+                                        "trip_id": {"type": "string"},
+                                        "duty_id": {"type": "string"},
+                                    },
+                                    "required": [
+                                        "vehicle_event_sequence",
+                                        "vehicle_event_type",
+                                        "trip_id",
+                                        "duty_id",
+                                    ],
+                                },
+                            ],
+                        },
+                    },
+                },
+                "required": ["vehicle_id", "vehicle_events"],
+            },
+        }
+        trips_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "trip_id": {"type": "string"},
+                    "route_number": {"type": "string"},
+                    "origin_stop_id": {"type": "string"},
+                    "destination_stop_id": {"type": "string"},
+                    "departure_time": day_offset_time_validation,
+                    "arrival_time": day_offset_time_validation,
+                },
+                "required": [
+                    "trip_id",
+                    "route_number",
+                    "origin_stop_id",
+                    "destination_stop_id",
+                    "departure_time",
+                    "arrival_time",
+                ],
+            },
+        }
+        stops_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "stop_id": {"type": "string"},
+                    "stop_name": {"type": "string"},
+                    "latitude": {"type": "number"},
+                    "longitude": {"type": "number"},
+                    "is_depot": {"type": "boolean"},
+                },
+                "required": [
+                    "stop_id",
+                    "stop_name",
+                    "latitude",
+                    "longitude",
+                    "is_depot",
+                ],
+            },
+        }
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "duties": duties_schema,
+                "vehicles": vehicles_schema,
+                "trips": trips_schema,
+                "stops": stops_schema,
+            },
+            "required": ["duties", "vehicles", "trips", "stops"],
+        }
+
+        # This is non-recoverable, that is, when the exception is raised we can't continue
+        try:
+            validate(json_data, json_schema)
+        except ValidationError as e:
+            getLogger().error(f"Invalid JSON dataset: {e}")
+            raise
+
+        valid_ids = {}
+        for obj_type, obj_id_field in cls.fields_to_sort_by_id.items():
+            id_counts = Counter(e[obj_id_field] for e in json_data[obj_type])
+            valid_ids[obj_id_field] = set(id_counts)
+            for id_, count in id_counts.items():
+                if count > 1:
+                    # Here, I try to recover by checking whether the repeated ids are the same
+                    items_with_same_id = [
+                        e for e in json_data[obj_type] if e[obj_id_field] == id_
+                    ]
+                    assert len(set(items_with_same_id)) == 1, (
+                        f"Distinct entries with the same {obj_id_field} found in {obj_type} "
+                        f"with value {id_}"
+                    )
+
+        # ID consistency across different objects is not validated.
+        # If an object ID is missing, a KeyError will be raised during processing,
+        # and the duty will be ignored without breaking the whole report generation process.
 
     @classmethod
     def _calculate_breaks(
