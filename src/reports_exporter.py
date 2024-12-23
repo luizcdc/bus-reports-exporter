@@ -47,7 +47,7 @@ class ReportsExporter:
         DUTY_BREAKS = "duty_breaks"
 
     @classmethod
-    def export_report_by_name(
+    def export_report_by_type(
         cls,
         json_duties_data_path: str,
         report_type: ReportTypes,
@@ -55,6 +55,19 @@ class ReportsExporter:
         output_format: str = AvaliableFormats.CSV,
         **kwargs,
     ):
+        """Generates and saves a report of the specified type in the specified format
+
+        Args:
+            json_duties_data_path: The path to the JSON file containing the duties data.
+            report_type: The type of report to generate.
+            save_file_path: The path to save the generated report.
+            output_format: The format in which to save the report.
+            **kwargs: Additional keyword arguments to pass to the report generation function.
+
+        Raises:
+            ValueError: If an invalid report type is provided.
+            ValueError: If an invalid output format is provided.
+        """
         with open(json_duties_data_path, "r") as f:
             raw_data = load(f)
 
@@ -78,6 +91,8 @@ class ReportsExporter:
                 report.to_excel(save_file_path, index=False)
             case cls.AvaliableFormats.TXT:
                 report.to_csv(save_file_path, index=False, sep="\t")
+            case _:
+                raise ValueError(f"Invalid output format: {output_format}")
 
     # Step 1
     @classmethod
@@ -217,7 +232,7 @@ class ReportsExporter:
         """
         Validates the JSON dataset against expected schemas for duties, vehicles, trips, and stops.
 
-        The validation isn't strict about extra fields, but it is strict about missing fields.
+        The validation isn't strict about extra fields, only about missing fields
 
         Args:
             json_data: The raw database (dict) containing all the objects.
@@ -881,19 +896,19 @@ def main():
         with option_context("display.max_rows", None, "display.max_columns", None):
             print(report)
 
-    ReportsExporter.export_report_by_name(
+    ReportsExporter.export_report_by_type(
         "../mini_json_dataset.json",
         ReportsExporter.ReportTypes.DUTY_START_END_TIMES,
         "step_1_report",
         ReportsExporter.AvaliableFormats.TXT,
     )
-    ReportsExporter.export_report_by_name(
+    ReportsExporter.export_report_by_type(
         "../mini_json_dataset.json",
         ReportsExporter.ReportTypes.DUTY_START_END_TIMES_AND_STOPS,
         "step_2_report",
         ReportsExporter.AvaliableFormats.CSV,
     )
-    ReportsExporter.export_report_by_name(
+    ReportsExporter.export_report_by_type(
         "../mini_json_dataset.json",
         ReportsExporter.ReportTypes.DUTY_BREAKS,
         "step_3_report",
