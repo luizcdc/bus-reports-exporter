@@ -8,7 +8,7 @@ from jsonschema import validate, ValidationError
 from more_itertools import unique_everseen
 from typing import Optional
 
-from pandas import DataFrame, concat
+from pandas import DataFrame, concat, option_context
 from enum import StrEnum
 from logging import getLogger
 
@@ -35,6 +35,49 @@ class ReportsExporter:
         "trips": "trip_id",
         "stops": "stop_id",
     }
+
+    class AvaliableFormats(StrEnum):
+        CSV = "csv"
+        EXCEL = "xlsx"
+        TXT = "txt"
+
+    class ReportTypes(StrEnum):
+        DUTY_START_END_TIMES = "duty_start_end_times"
+        DUTY_START_END_TIMES_AND_STOPS = "duty_start_end_times_and_stops"
+        DUTY_BREAKS = "duty_breaks"
+
+    @classmethod
+    def export_report_by_name(
+        cls,
+        json_duties_data_path: str,
+        report_type: ReportTypes,
+        save_file_path: str,
+        output_format: str = AvaliableFormats.CSV,
+        **kwargs,
+    ):
+        with open(json_duties_data_path, "r") as f:
+            raw_data = load(f)
+
+        match report_type:
+            case cls.ReportTypes.DUTY_START_END_TIMES:
+                report = cls.generate_duty_start_end_times_report(raw_data)
+            case cls.ReportTypes.DUTY_START_END_TIMES_AND_STOPS:
+                report = cls.generate_duty_start_end_times_and_stops_report(raw_data)
+            case cls.ReportTypes.DUTY_BREAKS:
+                report = cls.generate_duty_breaks_report(raw_data, **kwargs)
+            case _:
+                raise ValueError(f"Invalid report type: {report_type}")
+        if not save_file_path.endswith(f".{output_format}"):
+            save_file_path += f".{output_format}"
+
+        match output_format:
+            case cls.AvaliableFormats.CSV:
+                report.to_csv(save_file_path, index=False)
+            case cls.AvaliableFormats.EXCEL:
+                # TODO: auto adjust column width for easier visualization
+                report.to_excel(save_file_path, index=False)
+            case cls.AvaliableFormats.TXT:
+                report.to_csv(save_file_path, index=False, sep="\t")
 
     # Step 1
     @classmethod
@@ -834,13 +877,35 @@ def main():
     )
     step_3_report = ReportsExporter.generate_duty_breaks_report(raw_data)
 
-    print(step_1_report.head())
-    print(step_2_report.head())
-    print(step_3_report.head())
+    for report in [step_1_report, step_2_report, step_3_report]:
+        with option_context("display.max_rows", None, "display.max_columns", None):
+            print(report)
 
-    step_1_report.to_csv("step_1_report.csv", index=False)
-    step_2_report.to_csv("step_2_report.csv", index=False)
-    step_3_report.to_csv("step_3_report.csv", index=False)
+    ReportsExporter.export_report_by_name(
+        "../mini_json_dataset.json",
+        ReportsExporter.ReportTypes.DUTY_START_END_TIMES,
+        "step_1_report",
+        ReportsExporter.AvaliableFormats.TXT,
+    )
+    ReportsExporter.export_report_by_name(
+        "../mini_json_dataset.json",
+        ReportsExporter.ReportTypes.DUTY_START_END_TIMES_AND_STOPS,
+        "step_2_report",
+        ReportsExporter.AvaliableFormats.CSV,
+    )
+    ReportsExporter.export_report_by_name(
+        "../mini_json_dataset.json",
+        ReportsExporter.ReportTypes.DUTY_BREAKS,
+        "step_3_report",
+        ReportsExporter.AvaliableFormats.EXCEL,
+        min_duration_mins=16,
+        explicit_break_event_types=(
+            VehicleEventType.ATTENDANCE.value,
+            VehicleEventType.DEADHEAD.value,
+            VehicleEventType.DEPOT_PULL_IN.value,
+            VehicleEventType.DEPOT_PULL_OUT.value,
+        ),
+    )
 
 
 if __name__ == "__main__":
