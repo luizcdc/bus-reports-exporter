@@ -8,7 +8,7 @@ from src.reports_exporter import ReportsExporter
 
 
 class TestReportsExporter(unittest.TestCase):
-    def test_export_report_by_type__valid_report_type_and_format(self):
+    def test_export_report_by_type_obeys_format(self):
         with mock.patch("pandas.DataFrame.to_excel") as mock_to_excel:
             ReportsExporter.export_report_by_type(
                 "unittests_json.json",
@@ -27,25 +27,6 @@ class TestReportsExporter(unittest.TestCase):
             )
             mock_to_csv.assert_called_once_with("output_report.csv", index=False)
 
-    def test_export_report_by_type__invalid_report_type(self):
-        with self.assertRaises(ValueError):
-            ReportsExporter.export_report_by_type(
-                "unittests_json.json",
-                "invalid_report_type",
-                "output_report",
-                ReportsExporter.AvaliableFormats.CSV,
-            )
-
-    def test_export_report_by_type__invalid_output_format(self):
-        with self.assertRaises(ValueError):
-            ReportsExporter.export_report_by_type(
-                "unittests_json.json",
-                ReportsExporter.ReportTypes.DUTY_START_END_TIMES,
-                "output_report",
-                "invalid_format",
-            )
-
-    def test_export_report_by_type__output_format_txt(self):
         try:
             with tempfile.NamedTemporaryFile(delete=True, suffix=".txt") as temp_file:
                 temp_file.close()
@@ -67,6 +48,24 @@ class TestReportsExporter(unittest.TestCase):
                 # if exists
                 if exists(temp_file.name):
                     remove(temp_file.name)
+
+    def test_export_report_by_type_rejects_invalid_report_type(self):
+        with self.assertRaises(ValueError):
+            ReportsExporter.export_report_by_type(
+                "unittests_json.json",
+                "invalid_report_type",
+                "output_report",
+                ReportsExporter.AvaliableFormats.CSV,
+            )
+
+    def test_export_report_by_type_rejects_invalid_output_format(self):
+        with self.assertRaises(ValueError):
+            ReportsExporter.export_report_by_type(
+                "unittests_json.json",
+                ReportsExporter.ReportTypes.DUTY_START_END_TIMES,
+                "output_report",
+                "invalid_format",
+            )
 
 
 if __name__ == "__main__":
