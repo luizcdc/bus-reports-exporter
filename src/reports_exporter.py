@@ -1,6 +1,5 @@
 import copy
 from bisect import bisect_left
-from datetime import datetime
 from json import load
 from collections import Counter
 from jsonschema import validate, ValidationError

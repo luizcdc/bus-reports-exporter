@@ -18,7 +18,9 @@ DUTIES_SCHEMA = {
                         {
                             "properties": {
                                 "duty_event_sequence": {"type": "string"},
-                                "duty_event_type": {"const": "vehicle_event"},
+                                "duty_event_type": {
+                                    "const": DutyEventType.VEHICLE_EVENT.value
+                                },
                                 "vehicle_event_sequence": {"type": "integer"},
                                 "vehicle_id": {"type": "string"},
                             },
@@ -32,7 +34,9 @@ DUTIES_SCHEMA = {
                         {
                             "properties": {
                                 "duty_event_sequence": {"type": "string"},
-                                "duty_event_type": {"enum": ["taxi", "sign_on"]},
+                                "duty_event_type": {
+                                    "enum": [DutyEventType.TAXI, DutyEventType.SIGN_ON]
+                                },
                                 "start_time": DAY_OFFSET_TIME_TYPE_VALIDATION,
                                 "end_time": DAY_OFFSET_TIME_TYPE_VALIDATION,
                                 "origin_stop_id": {"type": "string"},
