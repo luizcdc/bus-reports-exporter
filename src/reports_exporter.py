@@ -14,6 +14,8 @@ from logging import getLogger
 
 from src.enums import VehicleEventType, DutyEventType
 from src.schemas import DRIVERS_SCHEDULE_SCHEMA
+from src.utils import day_offset_to_simple_time
+from src.utils.time import calculate_duration_in_minutes
 
 
 class ReportsExporter:
@@ -108,8 +110,8 @@ class ReportsExporter:
                 rows.append(
                     (
                         duty["duty_id"],
-                        cls._day_offset_time_to_simple_time(duty_start_time),
-                        cls._day_offset_time_to_simple_time(duty_end_time),
+                        day_offset_to_simple_time(duty_start_time),
+                        day_offset_to_simple_time(duty_end_time),
                     )
                 )
             except KeyError as e:
@@ -270,7 +272,7 @@ class ReportsExporter:
             """Transforms raw breaks into the desired final format taken by the report"""
             return [
                 (
-                    cls._day_offset_time_to_simple_time(break_[0]),
+                    day_offset_to_simple_time(break_[0]),
                     break_[1],
                     cls._get_object_by_id(raw_data["stops"], "stop_id", break_[2])[
                         "stop_name"
@@ -287,9 +289,7 @@ class ReportsExporter:
         explicit_breaks = [
             (
                 event["start_time"],
-                cls._calculate_duration_in_minutes(
-                    event["start_time"], event["end_time"]
-                ),
+                calculate_duration_in_minutes(event["start_time"], event["end_time"]),
                 event["destination_stop_id"],
             )
             for event in duty_events
@@ -307,9 +307,7 @@ class ReportsExporter:
                 implicit_breaks.append(
                     (
                         prev_end_time,
-                        cls._calculate_duration_in_minutes(
-                            prev_end_time, curr_start_time
-                        ),
+                        calculate_duration_in_minutes(prev_end_time, curr_start_time),
                         prev_event["destination_stop_id"],
                     )
                 )
@@ -384,29 +382,6 @@ class ReportsExporter:
                 duty_event["destination_stop_id"] = trip["destination_stop_id"]
                 duty_event["is_break_type"] = False
         return duty_events
-
-    @staticmethod
-    def _calculate_duration_in_minutes(start_time: str, end_time: str) -> int:
-        """
-        Calculate duration in minutes between two times with day offsets.
-
-        >>> ReportsExporter._calculate_duration_in_minutes("0.23:59", "1.00:00")
-        1
-        >>> ReportsExporter._calculate_duration_in_minutes("0.12:00", "0.14:00")
-        120
-        >>> ReportsExporter._calculate_duration_in_minutes("0.00:00", "1.23:59")
-        2879
-        """
-        start_day, start_time = start_time.split(".")
-        end_day, end_time = end_time.split(".")
-
-        start_day, end_day = str(int(start_day) + 1), str(int(end_day) + 1)
-
-        start_date = datetime.strptime(f"{start_day}.{start_time}", "%d.%H:%M")
-        end_date = datetime.strptime(f"{end_day}.{end_time}", "%d.%H:%M")
-
-        duration = end_date - start_date
-        return int(duration.total_seconds() // 60)
 
     @classmethod
     def _get_vehicle_event_by_index(cls, raw_data: dict, vehicle_id: str, idx: int):
@@ -590,24 +565,6 @@ class ReportsExporter:
             return objects[idx]
 
         raise KeyError(f"Object with {object_id_key}=={id_} not found")
-
-    @staticmethod
-    def _day_offset_time_to_simple_time(date_string: str) -> str:
-        """Converts a time string with a day offset to a simple time string
-
-        Args:
-
-            date_string: A string representing a time with a day offset, e.g. "1.12:34"
-
-        Returns:
-            A string representing a time without a day offset, e.g. "12:34"
-
-        >>> ReportsExporter._day_offset_time_to_simple_time("1.02:34")
-        '02:34'
-        >>> ReportsExporter._day_offset_time_to_simple_time("0.12:34")
-        '12:34'
-        """
-        return date_string[2:]
 
     @classmethod
     def _get_duty_event_time(
